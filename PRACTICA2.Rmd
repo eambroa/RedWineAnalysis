@@ -1,0 +1,656 @@
+---
+title: 'Práctica 2: Limpieza y validación de los datos'
+subtitle: 'Tipología y ciclo de vida de los datos'
+author:
+    - Eva Mª Ambroa Rey
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  toc: yes
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Descripción del dataset.{#tit1}  
+
+Se carga el fichero 'winequality-red'.
+```{r datos, message=FALSE, warning=FALSE}
+datos<-read.csv('winequality-red.csv',header=TRUE, sep=",")
+attach(datos)
+```
+Al cargar los datos ya podemos observar que tenemos 1599 observacionesy 12 variables. Las diferentes variables que existen en este dataset hacen referencia a diferentes características o métricas del vino tinto. Además, según sus características el vino se clasifica según su calidad en una escala de va del 3 al 8, correspondiendo los valores más bajos a una mala calidad.
+Este dataset pretende dar repuesta a cuál es la calidad de un vino tinto según sus características. Para ello necesitamos evaluar cuáles son las variables que más influyen para determinar la calidad de un vino tinto.
+Lo primero que haremos será evaluar los tipos de datos que tenemos. Para ello hacemos una tabla con las diferentes variables y el tipo de dato.
+```{r warning=FALSE}
+library(knitr)
+library(kableExtra)
+clase<-sapply(datos,class) 
+kable(data.frame(Variables=names(clase), Tipo=as.vector(clase)))
+```
+Los datos se componen de diferentes variables referentes a diferentes medidas del vino a estudiar. Todos los valores son numéricos.
+
+## 2. Integración y selección de los datos.{#tit2}
+
+La calidad del vino se determina a partir de una suma de factores. Primero exploramos la variable 'quality'. Esta variable numérica tiene un rango de 3-8. Podemos clasificar la calidad de un vino como baja, intermedia y alta, para ello añadimos una columna que defina la calidad del vino según su índice:
+
+- calidad baja: 3-4
+
+- calidad intermedia: 5-6
+
+- calidad alta: 7-8
+
+
+```{r message=FALSE, warning=FALSE}
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(pander)
+library(kableExtra)
+w = table(datos$quality)
+t<-as.data.frame(w)
+names(t)[1] = 'Calidad del vino tinto'
+kable(t)
+```
+Representamos esta nueva variable para ver su distribución.
+```{r fig.height=3, fig.width=5, message=FALSE, warning=FALSE}
+datos$index=''
+datos$index[datos$quality<5] = 'Baja'
+datos$index[5<=datos$quality & datos$quality <7] ='Intermedia'
+datos$index[7<=datos$quality] ='Alta'
+datos$index = as.factor(datos$index)
+qplot(x=index,data = datos, fill = index, 
+      main='Distribución de la calidad del vino tinto', xlab='Calidad', 
+      ylab='Recuento')+theme(plot.title = element_text(hjust = 0.5))
+```
+
+Como se puede ver en la figura anterior, la gran mayoría de los vinos tintos (82%) tiene un índice de calidad intermedio (5-6), un 4% tienen un índice bajo (3-4) y un 14% tienen un índice de calidad alto (7-8).
+
+A continuación vamos a explorar el resto de variables y ver su distribución.
+```{r fig.height=7, fig.width=10}
+par(mfrow=c(3,4))
+hist(fixed.acidity, xlab="Fixed Acidity",col='powderblue', main=NULL)
+hist(volatile.acidity,xlab="Volatile acidity", col='mistyrose',main=NULL)
+hist(citric.acid,xlab="Citric acid", col='aquamarine2',main=NULL)
+hist(residual.sugar,xlab="Residual sugar",col='blue',main=NULL)
+hist(chlorides,xlab="Chlorides",col='brown1',main=NULL)
+hist(free.sulfur.dioxide,xlab="Free sulfur dioxide",col='darkgoldenrod1',main=NULL)
+hist(total.sulfur.dioxide,xlab="Total sufulr dioxide",col='cyan1',main=NULL)
+hist(density,xlab="Density",col='cornflowerblue',main=NULL)
+hist(pH,xlab="pH",col='chocolate2',main=NULL)
+hist(sulphates,xlab="Sulphates",col='azure2',main=NULL)
+hist(alcohol,xlab="Alcohol",col='aquamarine3',main=NULL)
+hist(quality,xlab="Quality",col='grey',main=NULL)
+```
+Observando los histogramas podemos decir que tanto la variable 'density' como 'pH' siguen unas distribución normal. El resto de variables  tienen una distribución asimétrica.
+
+A continuación exploramos las principales métricas de los datos, donde podemos observar los valores mínimos y máximos, así como la media, la mediana y los rangos intercuartilícos.
+
+```{r message=FALSE, warning=FALSE}
+library(pander)
+library(Hmisc)
+pander(head(summary(datos)), split.table = 80, style = 'rmarkdown')
+```
+Aquí ya se observan algunos valores maximos bastante alejados del tercer quartil en algunas de las variables. Lo estudiaremos en profundidad en la siguiente sección.
+
+
+## 3. Limpieza de los datos.{#tit2}
+
+### 3.1. ¿Los datos contienen ceros o elementos vacíos? ¿Cómo gestionarías cada uno de estos casos?
+
+Vemos si existen campos nulos en el dataset.
+
+```{r message=FALSE, warning=FALSE}
+a<-sapply(datos, function(x) sum(is.na(x)))
+pander(head(a), split.table = 80, style = 'rmarkdown')
+```
+No existen campos nulos en ninguna columna. Si existiese algún dato nulo la manera de proceder podría ser o bien eliminar toda la fila del dataset o bien sustituir el valor nulo por la media o mediana de los valores de esa columna.
+
+###3.2. Identificación y tratamiento de valores extremos.
+
+Para identificar los valores extremos primero representaremos los datos en un boxplot. Representaremos todas las variables excepto 'quality'.
+```{r fig.height=7, fig.width=10, message=FALSE, warning=FALSE}
+par(mfrow=c(3,4))
+attach(datos)
+boxplot(fixed.acidity, xlab="Fixed Acidity",col='powderblue')
+boxplot(volatile.acidity,xlab="Volatile acidity", col='mistyrose')
+boxplot(citric.acid,xlab="Citric acid", col='aquamarine2')
+boxplot(residual.sugar,xlab="Residual sugar",col='blue')
+boxplot(chlorides,xlab="Chlorides",col='brown1')
+boxplot(free.sulfur.dioxide,xlab="Free sulfur dioxide",col='darkgoldenrod1')
+boxplot(total.sulfur.dioxide,xlab="Total sulfur dioxide",col='cyan1')
+boxplot(density,xlab="Density",col='cornflowerblue')
+boxplot(pH,xlab="pH",col='chocolate2')
+boxplot(sulphates,xlab="Sulphates",col='azure2')
+boxplot(alcohol,xlab="Alcohol",col='aquamarine3')
+```
+Visualmente ya se pueden identificar alguno de los valores extremos en estas variales. Por ejemplo en la variable 'Citric acid' hay claramente un valor que se aleja mucho del resto. Lo mismo ocurre para la variable 'Total sulfur dioxide' y 'Volatile acidity'. En general, todas las variables presentan valores extremos.
+Usaremos  el percentill 99 como el umbral para marcar todos los valores extremos.
+
+De la variable 'Fixed acidity' eliminamos tres outliers. Los datos sin los outliers los guardaremos en otro dataframe llamado 'datos_limpios', así seguiremos manteniendo el original.
+
+```{r message=FALSE, warning=FALSE}
+quantile(datos$fixed.acidity, c(.999))
+datos_limpios<-filter(datos,fixed.acidity < 15.6)
+```
+
+Para la variable 'Volatile acidity':
+```{r}
+quantile(datos$volatile.acidity, c(.999))
+datos_limpios<-filter(datos_limpios,volatile.acidity < 1.33)
+```
+
+La variable 'Citric acid' tiene un outlier.
+```{r}
+quantile(datos$citric.acid, c(.999))
+datos_limpios<-filter(datos_limpios,citric.acid < 0.78402)
+```
+
+La variable 'Residual sugar':
+```{r}
+quantile(datos$residual.sugar, c(.999))
+datos_limpios<-filter(datos_limpios,residual.sugar < 15.4)
+```
+Para la variabe 'Chlorides'presenta un solo valor extremo.
+```{r}
+quantile(datos$chlorides, c(.999))
+datos_limpios<-filter(datos_limpios,chlorides < 0.524486)
+```
+
+La variable 'Free sulfur dioxide' también tiene 3 valores extremos.
+```{r}
+quantile(datos$free.sulfur.dioxide, c(.999))
+datos_limpios<-filter(datos_limpios,free.sulfur.dioxide < 68)
+```
+
+De la variable Total sulfur dioxide, claramente se ven dos outliers. Eliminaremos estos valores.
+```{r}
+quantile(datos$total.sulfur.dioxide, c(.999))
+datos_limpios<-filter(datos_limpios, total.sulfur.dioxide<210.426)
+```
+
+En el caso de la variable 'Density' tenemos valores extremos en las dos direcciones.
+```{r}
+quantile(datos$density, c(.999))
+datos_limpios<-filter(datos_limpios,density < 1.003397)
+quantile(datos$density, c(.001))
+datos_limpios<-filter(datos_limpios,density > 0.9901477)
+
+```
+Para la variable 'pH':
+```{r}
+quantile(datos$pH, c(.999))
+datos_limpios<-filter(datos_limpios,pH < 3.94422)
+quantile(datos$pH, c(.001))
+datos_limpios<-filter(datos_limpios,pH > 2.86598)
+
+```
+Para la variable 'Sulphates':
+```{r}
+quantile(datos$sulphates, c(.999))
+datos_limpios<-filter(datos_limpios,sulphates < 1.96206)
+```
+Finalmente para la variable 'Alcohol':
+```{r}
+quantile(datos$alcohol, c(.999))
+datos_limpios<-filter(datos_limpios,alcohol < 14)
+```
+Generamos un nuevo dataset con los datos limpios.
+```{r}
+write.csv(datos_limpios, file="winequality-red_clean.csv")
+```
+
+Finalmente, en el dataframe 'datos_limpios' tenemos 1569 observaciones, es decir, hemos eliminado 30 valores extremos.
+
+Volvemos a representar los datos y observamos si las distribuciones han cambiado.
+
+```{r fig.height=8, fig.width=10, message=FALSE, warning=FALSE}
+par(mfrow=c(3,4))
+attach(datos_limpios)
+boxplot(fixed.acidity, xlab="Fixed Acidity",col='powderblue')
+boxplot(volatile.acidity,xlab="Volatile acidity", col='mistyrose')
+boxplot(citric.acid,xlab="Citric acid", col='aquamarine2')
+boxplot(residual.sugar,xlab="Residual sugar",col='blue')
+boxplot(chlorides,xlab="Chlorides",col='brown1')
+boxplot(free.sulfur.dioxide,xlab="Free sulfur dioxide",col='darkgoldenrod1')
+boxplot(total.sulfur.dioxide,xlab="Total sulfur dioxide",col='cyan1')
+boxplot(density,xlab="Density",col='cornflowerblue')
+boxplot(pH,xlab="pH",col='chocolate2')
+boxplot(sulphates,xlab="Sulphates",col='azure2')
+boxplot(alcohol,xlab="Alcohol",col='aquamarine3')
+```
+Ahora representamos las distribuciones de las variables.
+```{r fig.height=7, fig.width=10, message=FALSE}
+par(mfrow=c(3,4))
+hist(fixed.acidity, xlab="Fixed Acidity",col='powderblue', main=NULL)
+hist(volatile.acidity,xlab="Volatile acidity", col='mistyrose',main=NULL)
+hist(citric.acid,xlab="Citric acid", col='aquamarine2',main=NULL)
+hist(residual.sugar,xlab="Residual sugar",col='blue',main=NULL)
+hist(chlorides,xlab="Chlorides",col='brown1',main=NULL)
+hist(free.sulfur.dioxide,xlab="Free sulfur dioxide",col='darkgoldenrod1',main=NULL)
+hist(total.sulfur.dioxide,xlab="Total sufulr dioxide",col='cyan1',main=NULL)
+hist(density,xlab="Density",col='cornflowerblue',main=NULL)
+hist(pH,xlab="pH",col='chocolate2',main=NULL)
+hist(sulphates,xlab="Sulphates",col='azure2',main=NULL)
+hist(alcohol,xlab="Alcohol",col='aquamarine3',main=NULL)
+```
+Las distribuciones de algunas variables han cambiado y se asemejan más a una distribución normal. El cambio es notable para la variable 'Density'. Se puede observar algunas variables siguen teniendo algún outliers, pero como estos corresponden a las calidades que menos valores tienen, no los vamos a eliminar.
+
+Examinamos de donde hemos eliminado los valores extremos.
+```{r message=FALSE, warning=FALSE}
+w = table(datos_limpios$quality)
+t<-as.data.frame(w)
+names(t)[1] = 'Calidad del vino tinto'
+kable(t)
+```
+Como se ve en la tabla anterior, la calidad del vino 3 y 4 solo han perdido un dato, mientras que la calidad 5 ha perdido 10 valores, la 6
+ha perdido 12, la 7 ha perdido 4 y la calidad 8 solamente dos valores.
+
+
+## 4. Análisis de los datos.{#tit2}
+
+Ahora lo que trataremos de averiguar es cuales son las variables que más influyen en la determinación de la calidad del vino.
+
+### 4.1.	Selección de datos.
+
+Graficamos todas las variales frente a la variable 'quality' para ver si visualmente detectamos algún patrón.
+
+```{r fig.height=10, fig.width=10, message=FALSE, warning=FALSE}
+library(gridExtra)
+library(grid)
+library(lattice)
+library(ggpubr)
+p1<-ggplot(datos_limpios, aes(x=as.factor(quality), y=fixed.acidity, fill=index)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Fixed acidity")
+
+p2<-ggplot(datos_limpios, aes(x=as.factor(quality), y=volatile.acidity, fill=index)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Volatile acidity")
+
+p3<-ggplot(datos_limpios, aes(x=as.factor(quality), y=citric.acid, fill=index)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Citric Acid")
+
+p4<-ggplot(datos_limpios, aes(x=as.factor(quality), y=residual.sugar, fill=index)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Residual sugar")
+
+p5<-ggplot(datos_limpios, aes(x=as.factor(quality), y=chlorides, fill=index)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Chlorides")
+
+p6<-ggplot(datos_limpios, aes(x=as.factor(quality), y=free.sulfur.dioxide, fill=index)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Free sulfur dioxide")
+
+p7<-ggplot(datos_limpios, aes(x=as.factor(quality), y=total.sulfur.dioxide, fill=index)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Total sulfur dioxide")
+
+p8<-ggplot(datos_limpios, aes(x=as.factor(quality), y=density, fill=index)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Density")
+
+p9<-ggplot(datos_limpios, aes(x=as.factor(quality), y=pH, fill=index)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("pH")
+
+p10<-ggplot(datos_limpios, aes(x=as.factor(quality), y=sulphates, fill=index)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Sulphates")
+
+p11<-ggplot(datos_limpios, aes(x=as.factor(quality), y=alcohol, fill=index)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Alcohol")
+
+ggarrange(p1,p2,p3,p4,p5,p6,p7,p8,p9,p10,p11, ncol=3, 
+          nrow=4, common.legend = TRUE, legend="bottom")
+```
+A simple vista podemos decir que las variables 'Fixed acidity','Alcohol', 'Volatile acidity', 'Citric Acid', 'Sulphates', 'pH' y 'Density' podrían determinar la calidad del vino.
+La calidad alta del vino parece estar determinada por los siguientes factores:
+
+- Aumenta con el valor de Fixed acidity. 
+
+- Aumenta si disminuye el valor Volatil acidity.
+
+- Aumenta con el Citric Acid.
+
+- Aumenta si disminuy la densidad.
+
+- Aumenta si el valor de pH es bajo.
+
+- Aumenta con el valor de los sulfatos.
+
+- Aumenta con el valor del alcohol.
+
+Es necesario llevar a cabo un análisis estadístico para comprobar si estas correlaciones son ciertas.
+
+### 4.2.	Normalidad y homogeneidad de la varianza.
+
+Para determinar la existencia de normalidad podemos optar por realizar la prueba de Shapiro-Wilk. También graficaremos las variables en un QQ plot.
+ 
+La hipótesis nula H0: la distribución de cada variable es normal.  
+La hipótesis alternativa H1: la distribución de las variables no es normal.
+
+Si p > 0.05  aceptamos la hipótesis nula, existe normalidad.
+
+Si p < 0.05  rechazamos la hipótesis nula, no existe normalidad.
+```{r}
+library("dplyr")
+shapiro.test(datos_limpios$fixed.acidity)
+shapiro.test(datos_limpios$volatile.acidity)
+shapiro.test(datos_limpios$citric.acid)
+shapiro.test(datos_limpios$residual.sugar)
+shapiro.test(datos_limpios$chlorides)
+shapiro.test(datos_limpios$free.sulfur.dioxide)
+shapiro.test(datos_limpios$total.sulfur.dioxide)
+shapiro.test(datos_limpios$density)
+shapiro.test(datos_limpios$pH)
+shapiro.test(datos_limpios$sulphates)
+shapiro.test(datos_limpios$alcohol)
+
+```
+En general podemos decir que los datos no siguen una distribución normal. Cuando se tiene la muestra de varios grupos es apropiado comprobar la normalidad por grupo, pero no lo haremos porque existe una gran diferencia de muestras en los diferentes grupos según la variable 'quality' 
+
+Para poblaciones con n>30 esto no representa un problema, pero en nuestro caso tenemos algunos grupos con muy pocos valores, por lo que los test que tenemos que aplicar deberán reflejar la no normalidad de estos grupos.
+
+Representamos ahora el gráfico QQ:
+
+```{r fig.height=8, fig.width=10, message=FALSE, warning=FALSE}
+library(ggpubr)
+par(mfrow=c(3,4))
+a<-qqnorm(datos_limpios$fixed.acidity, pch = 1, frame = FALSE, main='Fixed acidity')
+a<-qqline(datos_limpios$fixed.acidity, col = "steelblue", lwd = 2)
+
+b<-qqnorm(datos_limpios$volatile.acidity, pch = 1, frame = FALSE,main='Volatile acidity')
+b<-qqline(datos_limpios$volatile.acidity, col = "steelblue", lwd = 2)
+
+c<-qqnorm(datos_limpios$citric.acid, pch = 1, frame = FALSE,main='Citric acid')
+c<-qqline(datos_limpios$citric.acid, col = "steelblue", lwd = 2)
+
+d<-qqnorm(datos_limpios$residual.sugar, pch = 1, frame = FALSE,main='Residual sugar')
+d<-qqline(datos_limpios$residual.sugar, col = "steelblue", lwd = 2)
+
+e<-qqnorm(datos_limpios$chlorides, pch = 1, frame = FALSE,main='Chlorides')
+e<-qqline(datos_limpios$chlorides, col = "steelblue", lwd = 2)
+
+f<-qqnorm(datos_limpios$free.sulfur.dioxide, pch = 1, frame = FALSE,main='Free sulfur dioxide')
+f<-qqline(datos_limpios$free.sulfur.dioxide, col = "steelblue", lwd = 2)
+
+g<-qqnorm(datos_limpios$total.sulfur.dioxide, pch = 1, frame = FALSE,main='Total sulfur dioxide')
+g<-qqline(datos_limpios$total.sulfur.dioxide, col = "steelblue", lwd = 2)
+
+h<-qqnorm(datos_limpios$density, pch = 1, frame = FALSE,main='Density')
+h<-qqline(datos_limpios$density, col = "steelblue", lwd = 2)
+
+i<-qqnorm(datos_limpios$pH, pch = 1, frame = FALSE,main='pH')
+i<-qqline(datos_limpios$pH, col = "steelblue", lwd = 2)
+
+j<-qqnorm(datos_limpios$sulphates, pch = 1, frame = FALSE,main='Sulphates')
+j<-qqline(datos_limpios$sulphates, col = "steelblue", lwd = 2)
+
+k<-qqnorm(datos_limpios$alcohol, pch = 1, frame = FALSE,main='Alcohol')
+k<-qqline(datos_limpios$alcohol, col = "steelblue", lwd = 2)
+
+```
+Observando los gráficos QQ, se puede decir que las variables 'Density' y 'pH' son las que más se acercan a una distribución normal.
+
+
+El supuesto de homogeneidad de varianzas (homocedasticidad), considera que la varianza es constante entre diferentes grupos. Haremos un contraste de hipótesis para comprobar la homodedasticidad:
+
+Hipótesis nula:  igualdad de varianzas entre los diferentes grupos (H0=H1).  
+Hipótesis alternativa: no existe igual de varianzas entre los diferentes grupos. 
+
+Si se tiene seguridad de que las muestras a comparar proceden de poblaciones que siguen una distribución normal, son recomendables el F-test y el test de Bartlet, pareciendo ser el segundo más recomendable ya que el primero es muy potente pero extremadamente sensible a desviaciones de la normal. Si no se tiene la seguridad de que las poblaciones de origen son normales, se recomiendan el test de Levene utilizando la mediana.
+
+```{r message=FALSE, warning=FALSE}
+library(car)
+leveneTest(y = datos_limpios$fixed.acidity, group = datos_limpios$quality, center = "median")
+```
+La variable 'Fixed acidity' no cumple el supuesto de homocedasticidad.
+```{r message=FALSE, warning=FALSE}
+leveneTest(y = datos_limpios$volatile.acidity, group = datos_limpios$quality, center = "median")
+```
+La variable 'Volatile acidity' no cumple el supuesto de homocedasticidad.
+```{r message=FALSE, warning=FALSE}
+leveneTest(y = datos_limpios$citric.acid, group = datos_limpios$quality, center = "median")
+```
+La variable 'Citric acid' no cumple el supuesto de homocedasticidad.
+```{r message=FALSE, warning=FALSE}
+leveneTest(y = datos_limpios$residual.sugar, group = datos_limpios$quality, center = "median")
+```
+La variable 'Residual sugar' cumple el supuesto de homocedasticidad.
+```{r message=FALSE, warning=FALSE}
+leveneTest(y = datos_limpios$chlorides, group = datos_limpios$quality, center = "median")
+```
+La variable 'Chlorides' cumple el supuesto de homocedasticidad.
+```{r message=FALSE, warning=FALSE}
+leveneTest(y = datos_limpios$free.sulfur.dioxide, group = datos_limpios$quality, center = "median")
+```
+La variable 'Free sulfur dioxide' cumple el supuesto de homocedasticidad.
+```{r message=FALSE, warning=FALSE}
+leveneTest(y = datos_limpios$total.sulfur.dioxide, group = datos_limpios$quality, center = "median")
+```
+La variable 'Total sulfur dioxide' no cumple el supuesto de homocedasticidad.
+```{r message=FALSE, warning=FALSE}
+leveneTest(y = datos_limpios$density, group = datos_limpios$quality, center = "median")
+```
+La variable 'Density' no cumple el supuesto de homocedasticidad.
+
+```{r message=FALSE, warning=FALSE}
+leveneTest(y = datos_limpios$pH, group = datos_limpios$quality, center = "median")
+```
+La variable 'pH' cumple el supuesto de homocedasticidad.
+
+
+```{r message=FALSE, warning=FALSE}
+leveneTest(y = datos_limpios$sulphates, group = datos_limpios$quality, center = "median")
+```
+La variable 'Sulphates' cumple el supuesto de homocedasticidad.
+```{r message=FALSE, warning=FALSE}
+leveneTest(y = datos_limpios$alcohol, group = datos_limpios$quality, center = "median")
+```
+En la variable 'Alcohol' la varianza no es constante entre los diferentes grupos. 
+
+
+### 4.3.	Pruebas estadísticas.
+
+Queremos evaluar que variables están relacionadas entre sí y cuáles determinan la calidad del vino. Para empezar veremos que correlaciones existen entre las diferentes variables.
+
+```{r message=FALSE, warning=FALSE}
+library(ggcorrplot)
+datos_corr<-select(datos_limpios, -index,-quality)
+ggcorrplot(cor(datos_corr), hc.order = TRUE, type = "lower", lab = TRUE, insig = "blank")
+```
+De la matriz anterior podemos observar que existe un correlación positiva entre las siguientesvariables:
+
+- 'Free sulfur dioxide' y 'Total sulfur dioxide'
+
+- 'Density' y 'Fixed acidity'
+
+- 'Fixed acidity y 'Citric acid'
+
+La correlaciones negativas más destacadas son entre:
+
+- 'pH' y 'Fixed acidity'
+
+- 'Citric acid' y 'Volatile acidity'
+
+
+Exploramos ahora la correlación existente entre la calidad del vino y el resto de variables.
+```{r message=FALSE, warning=FALSE}
+
+cor(x=datos_limpios[,1:12], y=(datos_limpios$quality))
+ggcorrplot(cor(datos_limpios[,1:12]), hc.order = TRUE, type = "lower", lab = TRUE, insig = "blank")
+```
+La variables que presentan una correlación más alta son 'Alcohol', 'Volatile acidity', 'Sulphates' y ' Citric acid'.
+La variable 'Alcohol' es la que tiene un 
+De los resultados, vemos que la variable 'Alcohol', destaca en términos de relación lineal positiva. Las variables 'Citric acid' y 'Sulphates' también muestran una relación positiva. La variable 'Volatile acidity' destaca como una variable correlacionada negativamente. 
+
+
+Veamos ahora si estas variables se ajustan a un modleo lineal.
+
+- Alcohol:
+```{r message=FALSE, warning=FALSE}
+summary(lm(formula = quality ~ alcohol, data = datos_limpios))
+```
+
+
+- Volatile acidity:
+
+```{r message=FALSE, warning=FALSE}
+summary(lm(formula = quality ~ volatile.acidity, data = datos_limpios))
+```
+
+
+- Sulphates:
+
+```{r message=FALSE, warning=FALSE}
+summary(lm(formula = quality ~ sulphates, data = datos_limpios))
+```
+
+
+- Citric acid:
+
+```{r message=FALSE, warning=FALSE}
+summary(lm(formula = quality ~ citric.acid, data = datos_limpios))
+```
+De los resultados anteriores, basandonos en el valor R-squared, la variable 'Alcohol' explica la calidad del vino en un 23.2%. La siguiente variable que más peso aporta a la calidad del vino es 'Volatile acidity' con un 14.9%
+
+En resumen podemos decir que la variable que más peso aporta para la calidad del vino es el Alcohol, seguida de 'Volatile acidity' y en menos medida 'Sulphates' y 'Citric acid'.
+
+
+Creamos ahora un modelo añadiendo cada variable, para ver si podemos obtener uno que se ajuste bien a nuestros datos.
+
+```{r message=FALSE, warning=FALSE}
+m1 <- lm(as.numeric(quality) ~ alcohol, data = datos_limpios)
+m2 <- update(m1, ~ . + volatile.acidity)
+m3 <- update(m2, ~ . + sulphates)
+m4 <- update(m3, ~ . + fixed.acidity)
+m5 <- update(m4, ~ . + citric.acid)
+summary(m5)
+
+```
+Este último modelo creado tiene un R2 de 35%.
+
+Podemos crear un árbol de decisión para intentar obtener un modelo mejor que el anterior.
+
+```{r message=FALSE, warning=FALSE}
+#training set
+datos_tree<-select(datos_limpios, -index)
+datos_train <- datos_tree[1:1176, ]
+
+#test set
+datos_test <- datos_tree[1177:1569, ]
+```
+
+```{r message=FALSE, warning=FALSE}
+library(rpart) 
+library(plotly) 
+library(rpart.plot)
+library(rattle)
+arbol <- rpart(quality ~. , data = datos_train)
+arbol
+```
+Visualizamos el árbol de decisión.
+```{r message=FALSE, warning=FALSE}
+fancyRpartPlot(arbol)
+```
+Si nos fijamos en el árbol, el principal método de clasificación es por la variable 'Alcohol', seguida de 'Volatile acidity' y 'Sulphates'. Esto es coherente con lo que hemos obtenido anteriormente.
+
+Caculamos la predicción:
+```{r message=FALSE, warning=FALSE}
+prediccion <- predict(arbol,datos_test)
+
+summary(prediccion)
+summary(datos_test$quality)
+```
+Por lo que podemos observar la predicción es bastante mala. Calculamos el error medio absoluto.
+```{r}
+error <- function(actual, predicted){
+  mean(abs(actual - predicted))
+}
+
+error(datos_test$quality, prediccion)
+```
+Tenemos un error del 52%. Al igual qu el modelo anterior, no hemos encontrado un método que se ajuste del todo bien a los datos.
+
+## 5. Representación de los datos.{#tit2}
+
+Hemos encontrado que hay varias variables correlacionadas entre si y otras que están correlaciones de manera positiva o negativa con la calidad del vino tinto. Vamos a representarlas:
+
+```{r fig.width=10, message=FALSE, warning=FALSE}
+
+p12<-ggplot(datos_limpios, aes(x=as.factor(quality), y=volatile.acidity, fill=quality)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Volatile acidity")
+
+
+p13<-ggplot(datos_limpios, aes(x=as.factor(quality), y=sulphates, fill=quality)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Sulphates")
+
+p14<-ggplot(datos_limpios, aes(x=as.factor(quality), y=alcohol, fill=quality)) +
+    geom_boxplot()+
+    xlab("Wine Quality") +
+    ylab("Alcohol")
+
+ggarrange(p12,p13,p14, ncol=3, 
+          nrow=1, common.legend = TRUE, legend="bottom")
+
+```
+
+
+```{r fig.height=6, fig.width=6, message=FALSE, warning=FALSE}
+p15<-ggplot(aes(x = fixed.acidity, y = density, colour = quality), 
+       data = datos_limpios) + 
+  geom_point(size = 2)
+
+p16<-ggplot(aes(x = fixed.acidity, y = citric.acid, colour = quality), 
+       data = datos_limpios) + 
+  geom_point(size = 2)
+
+p17<-ggplot(aes(x = free.sulfur.dioxide, y = total.sulfur.dioxide, colour = quality), 
+       data = datos_limpios) + 
+  geom_point(size = 2)
+
+p18<-ggplot(aes(x = pH, y = fixed.acidity, colour = quality), 
+       data = datos_limpios) + 
+  geom_point(size = 2)
+
+ggarrange(p15,p16,p17,p18, ncol=2, 
+          nrow=2, common.legend = TRUE, legend="bottom")
+```
+En los gráficos anteriores se pueden ver claramente las relaciones entre las variables estudiadas.
+
+
+## 6. Resolución del problema.{#tit2}
+
+Después de analizar los datos, podemos resaltar las siguientes conlcusiones:
+
+AUnque a priori el conjunto de datos a analizar parece sencillo, la manera de catar un vino es muy personal y aunque las personas que se dedican a ellos son expertas, siempre habrá un pequeño grado de subjetividad que será imposible de medir o predecir con nuestros modelos. Es por ello, que no hemos encontrado un modelo que se ajuste de manera fiable a los datos.
+La distribución de las calidades del vino también influye de manera negativa en nuestro análisis, ya que la cantidad de vinos con calidad 3 es muy baja en comparación con las calidad medias (5-6). Sería más adecuado tener un dataset un poco más equilibrado en cuanto a la calidad del vino, pero por otro lado eso también nos viene a decir, que la gran mayoría de vino tintos tienen una calidad aceptable y que solo unos pocos tienen calidad deficiente. Lo mismo para para la calidades altas (8).
+
+
+## 7. Código.{#tit2}
+
+El codigo R usado se adjunta en este repositorio con el nombre 'PRA2.Rmd'.
+
+
